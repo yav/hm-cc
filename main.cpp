@@ -5,8 +5,8 @@
 int main(int argc, char* argv[]) {
   
 
-  auto t1 = hm::tapp(hm::tvar(), hm::tvar());
-  auto t2 = hm::tvar();
+  auto t1 = hm::tapp(hm::tuni_var(0), hm::tuni_var(0));
+  auto t2 = hm::tuni_var(0);
 
   auto dbg = [&t1,&t2] {
     std::cout << "t1 = ";

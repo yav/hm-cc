@@ -5,10 +5,16 @@ namespace hm {
 
 
 
-std::ostream& TVar::dump(std::ostream &os, size_t amt) {
-  os << "tvar";
+std::ostream& TUniVar::dump(std::ostream &os, size_t amt) {
+  os << "tuni_var";
   if (forward.not_null()) os << " -> " << forward.raw();
   os << std::endl;
+  return os;
+}
+
+
+std::ostream& TBoundVar::dump(std::ostream &os, size_t amt) {
+  os << "tbound_var " << index << std::endl;
   return os;
 }
 
@@ -28,25 +34,31 @@ std::ostream& Type::dump(std::ostream &os, size_t amt) {
   for(; amt > 0; --amt) os << ' ';
   os << "[" << this << "] ";
   switch (shape()) {
-    case IsTVar: return as_var().dump(os,amt);
+    case IsTUniVar: return as_uni_var().dump(os,amt);
     case IsTCon: return as_con().dump(os,amt);
     case IsTApp: return as_app().dump(os,amt);
   }
   return os;
 }
 
-bool Type::occurs(Type& v) {
+bool Type::fits_in(Type& v) {
   zonk();
-  if (ptr_eq(v)) return true;
-  if (shape() == IsTApp) return as_app().occurs(v);
-  return false;
+  if (ptr_eq(v)) return false;
+  auto sh = shape();
+  switch(sh) {
+    case IsTApp: return as_app().fits_in(v);
+    case IsTBoundVar: return as_bound_var().fits_in(v.as_uni_var());
+    case IsTUniVar: v.as_uni_var().reduce_scope_to(v.as_uni_var()); return true;
+    default: return true;
+  }
 }
 
 static inline
 bool bind(Type &v, Type &t) {
   if (v.ptr_eq(t)) return true;
-  if (t.occurs(v)) return false;
-  v.as_var().forward = t;
+  if (!t.fits_in(v)) return false;
+  v.as_uni_var().forward = t;
+  v = t;
   return true;
 }
 
@@ -58,16 +70,19 @@ bool Type::unify(Type &other) {
   auto sh1 = shape();
   auto sh2 = other.shape();
 
-  if (sh1 == IsTVar) {
+  if (sh1 == IsTUniVar) {
     if (!bind(*this,other)) return false;
   } else 
-  if (sh2 == IsTVar) {
+  if (sh2 == IsTUniVar) {
     if (!bind(other,*this)) return false;
   } else
   if (sh1 != sh2) {
     return false;
   } else
   switch (sh1) {
+    case IsTBoundVar: if (as_bound_var() != other.as_bound_var()) return false; break;
+    // XXX: delay for external reasoning
+
     case IsTCon: if (as_con() != other.as_con()) return false; break;
     case IsTApp: if (!as_app().unify(other.as_app())) return false; break;
     default: return false; // unreachable
@@ -84,10 +99,14 @@ bool Type::operator == (Type &other) {
   auto sh2 = other.shape();
   if (sh1 != sh2) return false;
   switch (sh1) {
-    case IsTCon: return as_con() == other.as_con();
-    case IsTApp: return as_app() == other.as_app();
-    default: return false; // TVars are equal by pointer
+    case IsTBoundVar: if (as_bound_var() != other.as_bound_var()) return false; break;
+    case IsTCon: if (as_con() != other.as_con()) return false; break;
+    case IsTApp: if (as_app() != other.as_app()) return false; break;
+    default: return false; // UniVars are equal by pointer
   }
+
+  ref = other.ref;
+  return true;
 }
 
 }
